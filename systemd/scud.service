@@ -1,0 +1,16 @@
+[Unit]
+Description=Scud local media source for Rex
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/scud
+ExecStart=/opt/scud/venv/bin/python -m scud --config /opt/scud/config.yml
+Restart=on-failure
+RestartSec=3
+UMask=0077
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

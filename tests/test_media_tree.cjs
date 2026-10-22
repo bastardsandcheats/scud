@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const context=vm.createContext({document:{addEventListener(){}}});vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../scud/static/media-tree.js'),'utf8'),context);
+const row=(id,path,extra={})=>({id,relpath:path,library_id:'tv',kind:'show',...extra});
+let groups=context.groupMedia([row('1','DS9LD/Season 1/E01.mkv'),row('2','DS9LD/Season 2/E02.mkv')]);
+assert.equal(groups.length,1);assert.equal(groups[0].title,'DS9LD');assert.equal(groups[0].rows.length,2);
+groups=context.groupMedia([row('1','DS9LD/E01.mkv',{imdb_id:'tt1'}),row('2','Different/E01.mkv',{imdb_id:'tt1'})]);assert.equal(groups.length,2);
+groups=context.groupMedia([row('1','DS9LD/E01.mkv'),row('2','DS9LD/E01.mkv',{library_id:'other'})]);assert.equal(groups.length,2);
+groups=context.groupMedia([row('1','Movie/a.mkv',{kind:'movie'}),row('2','Movie/b.mkv',{kind:'movie'})]);assert.equal(groups.length,1);
+groups=context.groupMedia([row('1','root.mkv'),row('2','other.mkv')]);assert.equal(groups.length,2);assert.equal(groups[0].folder,null);
+console.log('Folder grouping: unmatched folders, distinct folders and libraries, movie versions and root files passed.');
+context.esc=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+let badge=context.rexFolderIndicator([row('1','Angel/e.mkv',{rex_state:'other_library',rex_library:'Local TV',rex_current_library:'Debrid TV'})]);
+assert.match(badge,/1 file not added to Rex/);assert.doesNotMatch(badge,/Debrid TV|previously added|not been moved/);assert.doesNotMatch(badge,/Complete in Rex/);
+badge=context.rexFolderIndicator([row('1','Angel/e.mkv',{rex_state:'withheld',match_status:'unmatched',rex_library:'Local TV'})]);assert.match(badge,/1 file not added to Rex/);
+badge=context.rexFolderIndicator([row('1','Angel/e.mkv',{rex_state:'received'})]);assert.match(badge,/Complete in Rex/);assert.doesNotMatch(badge,/rexFolderReason/);
+console.log('Rex folder indicators show completion or missing files without library bookkeeping.');
+badge=context.rexFolderIndicator([row('1','Show/e1.mkv',{season:1,episode:1,rex_state:'received'}),row('2','Show/e2.mkv',{season:1,episode:2,rex_state:'withheld'})]);assert.match(badge,/1 episode not added to Rex/);
+badge=context.rexFolderIndicator([row('1','Show/Specials/Deleted Scenes.mkv',{rex_state:'withheld'})]);assert.match(badge,/1 file not added to Rex/);assert.doesNotMatch(badge,/1 episode not added/);

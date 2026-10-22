@@ -1,0 +1,24 @@
+scud: v1
+host: 0.0.0.0
+port: 8788
+source_url: ""
+
+rex_url: "http://127.0.0.1:32400"
+rex_source: scud
+rex_snapshot_every_hours: 6
+poll_every_secs: 60
+log_level: INFO
+ffmpeg_path: ""
+tmdb_api_key: ""
+
+libraries:
+  - id: movies
+    type: movie
+    name: Local Movies
+    path: /media/movies
+    rex_library_key: ""
+  - id: tv
+    type: show
+    name: Local TV
+    path: /media/tv
+    rex_library_key: ""

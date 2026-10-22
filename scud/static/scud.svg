@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<defs><filter id="s" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000" flood-opacity=".35"/></filter><linearGradient id="fur" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fffdf7"/><stop offset="1" stop-color="#d9d8d2"/></linearGradient><linearGradient id="collar" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff3b3f"/><stop offset="1" stop-color="#a90812"/></linearGradient></defs>
+<g filter="url(#s)">
+<!-- collar is entirely inside the viewBox: no cropped ears or spikes -->
+<path d="M91 343 Q256 425 421 343 L400 430 Q256 492 112 430Z" fill="url(#collar)" stroke="#5b070c" stroke-width="8"/>
+<g fill="#d8dde3" stroke="#656b72" stroke-width="5"><path d="M117 370 58 381 104 416Z"/><path d="M157 420 127 478 190 445Z"/><path d="M230 448 256 507 282 448Z"/><path d="M330 440 382 479 362 416Z"/><path d="M400 374 458 392 411 421Z"/></g>
+<path d="M147 126 119 21 Q112 5 125 8 L214 94 Q256 76 298 94 L389 8 Q402 3 394 28 L367 133 Q417 188 409 277 Q401 371 322 421 Q255 464 187 425 Q105 380 99 286 Q92 190 147 126Z" fill="url(#fur)" stroke="#c5c5c0" stroke-width="7"/>
+<path d="M302 96 Q357 104 376 154 Q388 203 353 238 Q315 228 284 198 Q277 145 302 96Z" fill="#5a3025"/>
+<path d="M128 55 173 109 145 128Z" fill="#e7938f" opacity=".85"/><path d="M384 50 341 111 368 132Z" fill="#e7938f" opacity=".85"/>
+<path d="M159 209 Q194 178 228 209 Q198 245 163 226Z" fill="#17191b"/><path d="M294 207 Q328 177 363 207 Q341 241 303 228Z" fill="#17191b"/>
+<circle cx="194" cy="211" r="9" fill="#b97731"/><circle cx="329" cy="210" r="9" fill="#b97731"/><circle cx="191" cy="208" r="3" fill="#fff"/><circle cx="326" cy="207" r="3" fill="#fff"/>
+<path d="M209 299 Q256 272 312 300 Q318 325 286 341 Q252 353 218 336 Q202 326 209 299Z" fill="#111214"/><ellipse cx="255" cy="305" rx="27" ry="10" fill="#3a3b3d" opacity=".6"/>
+<path d="M170 327 Q255 397 343 326 Q334 393 268 411 Q202 405 170 327Z" fill="#47151b"/>
+<path d="M185 340 Q255 378 327 339" fill="none" stroke="#f2eee3" stroke-width="22" stroke-linecap="round" stroke-dasharray="10 7"/>
+<path d="M150 183 Q193 157 231 181M285 181 Q329 156 369 183" fill="none" stroke="#8c8b86" stroke-width="12" stroke-linecap="round"/>
+</g></svg>
