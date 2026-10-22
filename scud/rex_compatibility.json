@@ -1,6 +1,6 @@
 {
-  "rex_commit": "b35ae903a5da4d19dd5c85e6cec4202652e6de0f",
-  "tested_at": "2026-10-22T11:37:40Z",
+  "rex_commit": "28665e05f86cbf9184ea92d8ba44bcf831df7d4f",
+  "tested_at": "2026-10-22T11:50:29Z",
   "checks": [
     "Rex source/feed contract",
     "TMDB search and metadata contract"
