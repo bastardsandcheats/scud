@@ -20,7 +20,7 @@ The setup wizard and Settings page save to `/opt/scud/config.yml`. If you edit t
 
 ## Settings and scan status
 
-Settings has separate tabs for TMDB, Rex, scanning and serving, and libraries. Save settings applies changes across all tabs.
+Settings has separate tabs for TMDB, Rex, scanning and serving, and libraries. Save settings applies changes across all tabs. Settings are saved locally even if Rex is busy or unavailable; library creation and source registration retry in the background.
 
 The media page shows scan start and finish times, elapsed time, and average files processed per second. After counting the files, Scud estimates the finish time from the speed so far; estimates can change when matching or probing takes longer.
 

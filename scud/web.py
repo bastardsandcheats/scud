@@ -106,10 +106,9 @@ class WebServer:
                     libs.append({'id':slugify(str(x.get('id') or f"{'tv' if typ=='show' else 'movies'}-{i+1}")),'type':typ,'name':name,'path':p,'rex_library_name':str(x.get('rex_library_name') or name),'rex_library_key':str(x.get('rex_library_key') or '')})
                 cfg['libraries']=libs
                 cfg=load_config_from_dict(cfg)
-                rex=RexClient(cfg,app.log)
-                if cfg.get('rex_url'):
-                    rex.ensure_libraries()
-                    rex.register_source()
+                # Save locally even when Rex is busy or offline. The durable
+                # publisher creates libraries/registers the source and retries.
+                needs_sync=any(cfg.get(key)!=app.config.get(key) for key in ('libraries','rex_url','rex_source','source_url'))
                 old_ids={lib['id'] for lib in app.config.get('libraries',[])}
                 removed=old_ids-{lib['id'] for lib in cfg['libraries']}
                 gone=[app.scanner.feed_id(row) for row in app.db.list_media(limit=200000) if row['library_id'] in removed]
@@ -118,7 +117,7 @@ class WebServer:
                     with app.db.connect() as conn:
                         conn.executemany('DELETE FROM media WHERE library_id=?',[(ident,) for ident in removed])
                         conn.executemany('DELETE FROM folder_matches WHERE library_id=?',[(ident,) for ident in removed])
-                    app.scanner.sync([],gone)
+                if needs_sync or gone:app.scanner.publisher.enqueue([],gone,full=True)
                 threading.Thread(target=app.compat.run,name='scud-connection-check',daemon=True).start()
                 if key_changed:
                     with app.db.connect() as db:db.execute("UPDATE media SET match_method='tmdb-key-updated' WHERE match_status='error' AND match_method='folder-filename-tmdb-v1'")
