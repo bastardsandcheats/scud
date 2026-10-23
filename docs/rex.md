@@ -33,6 +33,14 @@ The independent publisher sends additions and changes in batches of 200 items an
 
 Rex can reject a snapshot that would remove more than half of a source's media. Scud reports that error and leaves the decision to the server administrator.
 
+## File identity and replacement
+
+Scud keeps its local media row, saved matches and manual episode numbers when a file is renamed or replaced. Renaming unchanged media preserves its Rex feed ID. A changed size, modification time or replacement inode creates a new Rex version ID and a distinct logical file label, sends the fresh probe, and withdraws the old version through the publisher. The HTTP path still points to the actual local file. This prevents Rex from retaining the previous version's codecs and track layout. Timestamp-only changes are conservatively treated as a new version too.
+
+On 23 October 2026, Scud was manually reviewed against [Building rex addons](https://notes.debridmediamanager.com/guides/rex-addons/) and Rex's feed API reference. Scud identifies existing movies/shows with external IDs, so it intentionally uses Plex metadata rather than addon `display` fields. Source registration, probing, placement, file sizes, snapshots, session recovery and optional deletion follow that contract.
+
+The file-version correction is covered by regression tests for in-place and atomic replacements, equal-size replacements, repeated versions, renames, persisted version IDs, preserved manual matches/numbering, failed probes and bonus-clip labels. A disposable Rex executable from the installed build also accepted a replacement version and stored its new HEVC/1280-width probe. This review and the bounded metadata check do not certify every client or media format.
+
 ## Library selection
 
 Each item identifies its destination by the saved Rex section key. The wizard creates or reuses the named libraries through Rex’s library API and saves their section IDs as `rex_library_key`. Each file is sent to its configured section.

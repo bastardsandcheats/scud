@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS media (
  updated_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS media_library_relpath ON media(library_id, relpath);
+CREATE INDEX IF NOT EXISTS media_inode ON media(library_id,dev,inode);
 CREATE INDEX IF NOT EXISTS media_status ON media(match_status);
 CREATE INDEX IF NOT EXISTS media_kind ON media(kind);
 CREATE TABLE IF NOT EXISTS title_cache (

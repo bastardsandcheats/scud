@@ -61,7 +61,7 @@ class Scanner:
         return progress
     def scan_once(self):
         if self.busy:return
-        self.busy=True; scan_id=uuid.uuid4().hex; started=time.time(); changed=[]; found=0; scanned_libraries=[]
+        self.busy=True; scan_id=uuid.uuid4().hex; started=time.time(); changed=[]; replaced=[]; found=0; scanned_libraries=[]
         self.progress={'phase':'discovering','found':0,'processed':0,'current':'','started':started}
         matcher=Matcher(self.db,self.log,self.app.config)
         try:
@@ -90,7 +90,16 @@ class Scanner:
                     self.progress.update(processed=found)
                     rel=p.relative_to(root).as_posix(); found+=1; self.progress.update(found=found,current=str(p))
                     item_id=self.stable_id(lib,st,rel); existing=self.db.get_media(item_id)
-                    unchanged=existing and existing['size']==st.st_size and existing['mtime_ns']==st.st_mtime_ns
+                    if not existing:
+                        # Atomic replacement changes the inode at an existing path. Keep
+                        # the local row and its picks; subsequent renames find its new inode.
+                        with self.db.connect() as db:
+                            known=db.execute('SELECT * FROM media WHERE library_id=? AND dev=? AND inode=? LIMIT 1',(lib['id'],int(st.st_dev),int(st.st_ino))).fetchone() if st.st_ino else None
+                            if known is None:
+                                known=db.execute('SELECT * FROM media WHERE library_id=? AND relpath=?',(lib['id'],rel)).fetchone()
+                        existing=self.db._row(known)
+                        if existing:item_id=existing['id']
+                    unchanged=existing and existing['size']==st.st_size and existing['mtime_ns']==st.st_mtime_ns and existing['dev']==st.st_dev and existing['inode']==st.st_ino
                     retry_name=unchanged and existing['match_status'] in ('unmatched','error') and existing.get('match_method')!='folder-filename-tmdb-v1'
                     if unchanged and not retry_name:
                         moved = existing.get('relpath') != rel or existing.get('real_path') != str(p)
@@ -119,13 +128,19 @@ class Scanner:
                           confidence=CASE WHEN media.match_method='manual' THEN media.confidence ELSE excluded.confidence END,
                           media_info=excluded.media_info,probe_error=excluded.probe_error,seen_scan=excluded.seen_scan,updated_at=excluded.updated_at""",
                           (item_id,lib['id'],rel,str(p),int(st.st_dev),int(st.st_ino),st.st_size,st.st_mtime_ns,g.kind,g.title,g.year,g.season,g.episode,g.episode_end,match.get('status','unmatched'),match.get('title'),match.get('year'),ids.get('imdb'),ids.get('tmdb'),ids.get('tvdb'),match.get('method'),match.get('confidence'),json.dumps(media_info,separators=(',',':')) if media_info else None,probe_error,scan_id,now))
+                        if existing and not unchanged:
+                            # Rex keeps the first probe for a feed version. A new size/mtime
+                            # is a conservative version boundary; local matches and picks stay put.
+                            replaced.append(self.feed_id(existing))
+                            version=item_id+'-v-'+uuid.uuid4().hex[:16]
+                            db.execute('UPDATE media SET rex_feed_id=? WHERE id=?',(version,item_id))
                     changed.append(item_id)
             with self.db.connect() as db:
-                gone=[]
+                gone=list(replaced)
                 if scanned_libraries:
                     marks=','.join('?' for _ in scanned_libraries)
                     removed_rows=db.execute(f"SELECT * FROM media WHERE library_id IN ({marks}) AND (seen_scan IS NULL OR seen_scan<>?)",(*scanned_libraries,scan_id)).fetchall()
-                    gone=[self.feed_id(dict(row)) for row in removed_rows]
+                    gone.extend(self.feed_id(dict(row)) for row in removed_rows)
                     if removed_rows:db.executemany("DELETE FROM media WHERE id=?",[(row['id'],) for row in removed_rows])
             folders.save()
             self.progress.update(phase='syncing',found=found,processed=found,scan_finished=time.time(),changed=len(changed),removed=len(gone))
@@ -151,7 +166,7 @@ class Scanner:
         if extra_type(row):
             library=next((lib for lib in self.app.config.get('libraries',[]) if lib['id']==row['library_id']),{})
             key=json.dumps([sorted(identity(row)),library.get('rex_library_key')],sort_keys=True)
-            return row['id']+'-extra-'+hashlib.sha1(key.encode()).hexdigest()[:10]
+            return (row.get('rex_feed_id') or row['id'])+'-extra-'+hashlib.sha1(key.encode()).hexdigest()[:10]
         return row.get('rex_feed_id') or row['id']
     def feed_parents(self,rows):
         parents={}
@@ -171,7 +186,10 @@ class Scanner:
         if lib.get('rex_library_key'): item['library']=str(lib['rex_library_key'])
         else: item['library']='show' if row['kind']=='show' else 'movie'
         if row.get('rex_feed_id'):
-            item['file']=f"/scud/{row['library_id']}/library-{lib.get('rex_library_key')}/{row['relpath']}"
+            # A new ID also needs its own logical file label, even while the old
+            # version is in Rex's trash. The served path still points at the real file.
+            version='/version-'+hashlib.sha256(row['rex_feed_id'].encode()).hexdigest()[:16] if '-v-' in row['rex_feed_id'] else ''
+            item['file']=f"/scud/{row['library_id']}/library-{lib.get('rex_library_key')}{version}/{row['relpath']}"
         ids={k:v for k,v in [('imdb',row.get('imdb_id')),('tmdb',row.get('tmdb_id')),('tvdb',row.get('tvdb_id'))] if v not in (None,'')}
         if ids:
             item['ids']=ids; item['kind']='episode' if row['kind']=='show' else 'movie'
@@ -187,7 +205,10 @@ class Scanner:
             parent_file=parent_item.get('file') or '/scud/'+parent_item['path']
             parts=Path(row['relpath']).parts[1:]
             if parts and parts[0].lower() in ('extras','specials','bonus'):parts=parts[1:]
-            item['file']=str(Path(parent_file).parent / ' - '.join(parts))
+            label=' - '.join(parts)
+            if '-v-' in (row.get('rex_feed_id') or ''):
+                clip=Path(label);label=clip.stem+' - '+row['rex_feed_id'].rsplit('-v-',1)[-1]+clip.suffix
+            item['file']=str(Path(parent_file).parent / label)
             item['kind']='extra';item['extra_type']=extra
             item['name']=Path(row['relpath']).stem
             for key in ('season','episode','episode_end'):item.pop(key,None)
@@ -219,7 +240,7 @@ class Scanner:
             rex.delete_ids([row.get('rex_feed_id') or row['id'] for row in batch])
             for row in batch:
                 library=next(lib for lib in self.app.config['libraries'] if lib['id']==row['library_id'])
-                row['rex_feed_id']=row['id']+'-lib-'+str(library['rex_library_key'])
+                row['rex_feed_id']=(row.get('rex_feed_id') or row['id'])+'-lib-'+str(library['rex_library_key'])
             with self.db.connect() as connection:
                 connection.executemany('UPDATE media SET rex_feed_id=? WHERE id=?',[(row['rex_feed_id'],row['id']) for row in batch])
             rex.post_items([self.feed_item(row) for row in batch])
