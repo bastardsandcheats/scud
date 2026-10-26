@@ -1,6 +1,6 @@
 """Live API contract checks using an isolated, empty Rex source."""
 from __future__ import annotations
-import argparse,json,re,time,uuid
+import argparse,json,re,time,uuid,requests
 from pathlib import Path
 from .rex import RexClient,RexError
 from .tmdb import TMDBClient
@@ -32,9 +32,12 @@ class Compatibility:
         return self.status
     def rex_contract(self):
         rex=RexClient(self.app.config,self.app.log)
+        self.wait_for_rex(rex)
         def request(method,path,body=None):
-            try:response=rex.session.request(method,rex.base+path,json=body,headers=rex.headers(),timeout=(4,25))
-            except Exception:raise RexError('Rex could not be reached during the compatibility check.') from None
+            # Library activity can briefly queue source requests behind catalog work.
+            try:response=rex.session.request(method,rex.base+path,json=body,headers=rex.headers(),timeout=(4,60))
+            except requests.exceptions.ReadTimeout:raise RexError(f'{method} {path} timed out waiting 60 seconds for Rex.') from None
+            except requests.exceptions.RequestException:raise RexError(f'{method} {path} could not connect to Rex during the compatibility check.') from None
             if not response.ok:raise RexError(f'{method} {path} answered HTTP {response.status_code}.')
             try:return response.json()
             except ValueError:raise RexError(f'{method} {path} did not return JSON.') from None
@@ -72,6 +75,23 @@ class Compatibility:
                 require(isinstance(path,str) and path.startswith(source_path+'/confirm/') and re.fullmatch(r'[a-f0-9]+',path.rsplit('/',1)[-1]) is not None,'Rex source cleanup confirmation schema changed.')
                 result=request('DELETE',path)
                 require(result.get('deleted') is True,'Rex did not clean up its empty compatibility source.')
+    def wait_for_rex(self,rex):
+        deadline=time.monotonic()+90
+        reason='not responding'
+        while True:
+            try:
+                response=rex.session.request('GET',rex.base+'/identity',headers=rex.headers(),timeout=(2,3))
+                if response.ok:
+                    container=response.json().get('MediaContainer',{})
+                    if isinstance(container,dict) and isinstance(container.get('machineIdentifier'),str) and container['machineIdentifier']:
+                        return
+                    reason='response does not contain a server identity'
+                else:reason=f'HTTP {response.status_code}'
+            except requests.exceptions.RequestException:reason='not responding'
+            except (ValueError,AttributeError):reason='response is not a Rex identity'
+            remaining=deadline-time.monotonic()
+            if remaining<=0:raise RexError(f'Rex readiness check GET /identity failed after 90 seconds: {reason}. Feed checks were not started.')
+            time.sleep(min(2,remaining))
     def tmdb_contract(self):
         client=TMDBClient(self.app.config['tmdb_api_key'])
         config=client.get('/configuration')

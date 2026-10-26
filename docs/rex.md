@@ -59,7 +59,7 @@ Scud refuses source-side DELETE with HTTP 403 by default. If **Allow deletion fr
 
 ## Compatibility
 
-At startup, Scud checks the Rex source/feed and library API response formats, including an isolated held item, and the TMDB configuration, movie/TV search and episode metadata formats. The temporary Rex source contains no playable media and is removed after the check. Failures appear in the log and the interface. These checks cover Scud’s API use; they cannot certify every Rex feature.
+At startup, Scud first waits up to 90 seconds for `/identity` to return a server identity, using short requests and retrying while Rex starts. It then checks the Rex source/feed and library API response formats, including an isolated held item, and the TMDB configuration, movie/TV search and episode metadata formats. If Rex is not ready, the feed checks do not start. The temporary Rex source contains no playable media and is removed after the check. Failures appear in the log and the interface. These checks cover Scud’s API use; they cannot certify every Rex feature.
 
 The last tested commit is recorded in `scud/rex_compatibility.json` and displayed in Settings and the README. Maintainers can record a new verified baseline with `python -m scud.compat --record --revision-file /path/to/installed-revision` after running the tests.
 
