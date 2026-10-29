@@ -15,7 +15,7 @@ Scud works with local disks, mounted network shares, and any other folder the Sc
 - Cache FFprobe streams, formats and chapters, and publish recognised bonus videos as Rex extras.
 - Deliver changes through a persistent queue with retry backoff, independent of scanning.
 - Recover lost snapshot sessions and send a full snapshot at startup and on schedule.
-- Check Rex and TMDB compatibility at startup, with failures visible in the interface and logs.
+- Check Rex availability and API response formats without writing test data at startup, with failures visible in the interface and logs.
 - Choose a log level in Settings; the default is INFO.
 
 Unmatched media stays in Scud. Bonus videos need a matched movie or episode in the same media folder before Rex can attach them to that title. Numbered TV specials remain episodes.
@@ -162,5 +162,5 @@ pytest -q
 Scud is provided under the MIT License. Rex and Zurg are separate projects with their own licenses.
 
 <!-- rex-compat-start -->
-Last live API compatibility test: Rex commit `e1d08e7378a7846f8e9da6efd8e10713c81e1916` (2026-10-28T00:06:58Z).
+Last live API compatibility test: Rex commit `e1d08e7378a7846f8e9da6efd8e10713c81e1916` (2026-10-29T00:14:16Z).
 <!-- rex-compat-end -->

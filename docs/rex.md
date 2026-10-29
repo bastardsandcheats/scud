@@ -59,9 +59,13 @@ Scud refuses source-side DELETE with HTTP 403 by default. If **Allow deletion fr
 
 ## Compatibility
 
-At startup, Scud first waits up to 90 seconds for `/identity` to return a server identity, using short requests and retrying while Rex starts. It then checks the Rex source/feed and library API response formats, including an isolated held item, and the TMDB configuration, movie/TV search and episode metadata formats. If Rex is not ready, the feed checks do not start. The temporary Rex source contains no playable media and is removed after the check. Failures appear in the log and the interface. These checks cover Scud’s API use; they cannot certify every Rex feature.
+At startup, Scud waits for `/identity`, then reads the source and library listing schemas and checks TMDB. It does not create media, register test sources, or delete sources on the production Rex.
 
-The last tested commit is recorded in `scud/rex_compatibility.json` and displayed in Settings and the README. Maintainers can record a new verified baseline with `python -m scud.compat --record --revision-file /path/to/installed-revision` after running the tests.
+The machine-local Rex updater clones the exact candidate revision into a new directory, builds it with the active local patches, and starts a disposable Rex with an empty test catalogue. It runs the full Scud source/feed contract, including held-item creation/removal, snapshots and source deletion, against that instance. The container has an internal network, a host loopback proxy, dummy claim data, and no production configuration, media or credentials. It is destroyed before production is rebuilt. A failed check or failed cleanup prevents deployment.
+
+A successful validation receipt records the exact revision, build fingerprint and Scud checker digest. The post-deployment watcher verifies that receipt and records the baseline; it does not repeat mutating tests on production. These checks cover Scud's API use, not every client or media format.
+
+The last tested commit is recorded in `scud/rex_compatibility.json` and displayed in Settings and the README. Maintainers can record a new verified baseline with `python -m scud.compat --record --receipt /path/to/isolated-validation.json --revision-file /path/to/installed-revision` after running the tests.
 
 See [Zurg parity review](zurg-parity.md) for current differences.
 

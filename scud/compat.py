@@ -1,19 +1,25 @@
 """Live API contract checks using an isolated, empty Rex source."""
 from __future__ import annotations
-import argparse,json,re,time,uuid,requests
+import argparse,hashlib,json,re,time,uuid,requests
 from pathlib import Path
 from .rex import RexClient,RexError
 from .tmdb import TMDBClient
 
 BASELINE=Path(__file__).with_name('rex_compatibility.json')
 
+def checker_digest():
+    digest=hashlib.sha256()
+    for path in sorted(Path(__file__).parent.glob('*.py')):
+        digest.update(path.name.encode());digest.update(path.read_bytes())
+    return digest.hexdigest()
+
 def baseline():
     try:return json.loads(BASELINE.read_text())
     except (OSError,ValueError):return {}
 
 class Compatibility:
-    def __init__(self,app):
-        self.app=app;self.status={'state':'pending','checks':[],'tested':baseline()}
+    def __init__(self,app,isolated=False):
+        self.app=app;self.isolated=isolated;self.status={'state':'pending','checks':[],'tested':baseline()}
     def run(self):
         checks=[];self.status={**self.status,'state':'checking'}
         def check(name,callback):
@@ -47,6 +53,11 @@ class Compatibility:
         require(isinstance(sources,dict) and isinstance(sources.get('size'),int) and isinstance(sources.get('sources',[]),list),'Rex source listing schema changed.')
         sections=request('GET','/library/sections').get('MediaContainer',{})
         require(isinstance(sections,dict) and isinstance(sections.get('Directory',[]),list),'Rex library listing schema changed.')
+        # Normal startup only reads production. Mutating contracts run in a disposable Rex.
+        if not self.isolated:return
+        from urllib.parse import urlsplit
+        require(urlsplit(rex.base).hostname in ('127.0.0.1','::1'),'Isolated checks require a loopback Rex URL.')
+        require(any(row.get('type') in ('show','movie') for row in sections.get('Directory',[])),'Isolated Rex needs a test movie or TV library.')
         source='scud-compat-'+uuid.uuid4().hex[:12];source_path='/rex/sources/'+source;feed='/rex/feed/'+source;registered=False
         try:
             request('PUT',source_path,{'url':rex.source_url(),'mount':'/scud-compat'});registered=True
@@ -104,7 +115,9 @@ class Compatibility:
         if not isinstance(season,dict) or not isinstance(season.get('episodes'),list) or not all(isinstance(row.get('episode_number'),int) and isinstance(row.get('name'),str) for row in season['episodes']):raise RuntimeError('TMDB episode metadata schema changed.')
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--record',action='store_true');parser.add_argument('--config',default='config.yml');parser.add_argument('--revision-file',default='/opt/Rex/config/installed-revision');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--record',action='store_true');parser.add_argument('--isolated',action='store_true');parser.add_argument('--receipt');parser.add_argument('--config',default='config.yml');parser.add_argument('--revision-file',default='/opt/Rex/config/installed-revision');args=parser.parse_args()
+    if args.record and not args.receipt:parser.error('--record requires a successful isolated validation receipt')
+    if args.receipt and (not args.record or args.isolated):parser.error('--receipt requires --record and cannot be combined with --isolated')
     revision=None
     if args.record:
         revision=Path(args.revision_file).read_text().strip()
@@ -114,12 +127,17 @@ def main():
     from .config import load_config
     logging.basicConfig(level=logging.INFO,format='%(levelname)s %(message)s')
     app=SimpleNamespace(root=Path(__file__).resolve().parents[1],config=load_config(Path(args.config).resolve()),log=logging.getLogger('scud.compat'))
-    result=Compatibility(app).run()
+    if args.receipt:
+        data=json.loads(Path(args.receipt).read_text())
+        fingerprint=Path(args.revision_file).with_name('installed-build-fingerprint').read_text().strip()
+        if data.get('state')!='passed' or data.get('rex_commit')!=revision or data.get('build_fingerprint')!=fingerprint or data.get('checker_digest')!=checker_digest():raise SystemExit('Isolated validation receipt does not match the installed build and current Scud checker.')
+        result={'state':'passed','checks':[{'name':name,'ok':True} for name in data['checks']]}
+    else:result=Compatibility(app,isolated=args.isolated).run()
     for check in result['checks']:print(('PASS' if check['ok'] else 'FAIL')+' '+check['name']+(': '+check['error'] if check.get('error') else ''))
     if result['state']!='passed':raise SystemExit(1)
     if args.record:
         if Path(args.revision_file).read_text().strip()!=revision:raise SystemExit('Rex changed revision during the compatibility check; rerun the check.')
-        data={'rex_commit':revision,'tested_at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'checks':[row['name'] for row in result['checks']]}
+        data={'rex_commit':revision,'tested_at':data['tested_at'],'checks':[row['name'] for row in result['checks']],'mode':'disposable Rex','build_fingerprint':fingerprint}
         BASELINE.write_text(json.dumps(data,indent=2)+'\n')
         readme=app.root/'README.md';text=readme.read_text();note=f'<!-- rex-compat-start -->\nLast live API compatibility test: Rex commit `{revision}` ({data["tested_at"]}).\n<!-- rex-compat-end -->'
         if '<!-- rex-compat-start -->' in text:text=re.sub(r'<!-- rex-compat-start -->.*?<!-- rex-compat-end -->',lambda _:note,text,flags=re.S)
