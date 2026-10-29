@@ -1,10 +1,10 @@
 {
   "rex_commit": "e1d08e7378a7846f8e9da6efd8e10713c81e1916",
-  "tested_at": "2026-10-29T06:00:09Z",
+  "tested_at": "2026-10-29T18:00:15Z",
   "checks": [
     "Rex source/feed contract",
     "TMDB search and metadata contract"
   ],
   "mode": "disposable Rex",
-  "build_fingerprint": "7254890e822f32c88e14bf5d4e195127b5b95dec14136a061fb81d8bdf849398"
+  "build_fingerprint": "3202db5b483f0ebad44f4b4044c4ba8f5885589ea27f36c9e2ac741c388afe5b"
 }
