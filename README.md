@@ -162,5 +162,5 @@ pytest -q
 Scud is provided under the MIT License. Rex and Zurg are separate projects with their own licenses.
 
 <!-- rex-compat-start -->
-Last live API compatibility test: Rex commit `d17635e2fe02392e475949491320d14f2b0718d9` (2026-10-30T18:02:31Z).
+Last live API compatibility test: Rex commit `41cc6b28d4fe6a724200ab22d4e723921414d40d` (2026-10-31T06:02:26Z).
 <!-- rex-compat-end -->
