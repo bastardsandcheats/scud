@@ -27,7 +27,8 @@ class CompatibilityTests(unittest.TestCase):
    client.return_value.base='http://production-rex'
    client.return_value.session.request.side_effect=response
    check.rex_contract()
-   self.assertEqual(client.return_value.session.request.call_count,3)
+   self.assertEqual(client.return_value.session.request.call_count,2)
+   self.assertFalse(any('/library/' in call.args[1] for call in client.return_value.session.request.call_args_list))
  def test_mutating_checks_refuse_a_production_url(self):
   check=Compatibility(self.app,isolated=True)
   with patch.object(check,'wait_for_rex'),patch('scud.compat.RexClient') as client:
@@ -66,7 +67,7 @@ class CompatibilityTests(unittest.TestCase):
    body=kwargs.get('json') or {};data={}
    if url.endswith('/identity'):data={'MediaContainer':{'machineIdentifier':'rex-test'}}
    elif url.endswith('/rex/sources'):data={'size':0}
-   elif url.endswith('/library/sections'):data={'MediaContainer':{'Directory':[{'key':'1','type':'movie'}]}}
+   elif method=='GET' and '/rex/sources/scud-compat-' in url:data={'directories':[{'name':'__compat__','movies':'Scud Compatibility'}]}
    elif method=='GET':data={'size':0,'items':[]}
    elif method=='POST':data={'created':'wrong'}
    elif method=='DELETE' and '/confirm/' not in url:data={'confirm':url.removeprefix('http://127.0.0.1')+'/confirm/abc123'}

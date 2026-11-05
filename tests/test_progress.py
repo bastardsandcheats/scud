@@ -25,18 +25,30 @@ class ReceiptTests(unittest.TestCase):
     def setUp(self):
         self.row={'id':'one','library_id':'tv','kind':'show','match_status':'matched','tmdb_id':1,'season':1,'episode':1}
         self.app=SimpleNamespace(config={'libraries':[{'id':'tv','rex_library_key':'4'}]},scanner=SimpleNamespace(publishable=Scanner.publishable,feed_id=lambda row:row.get('rex_feed_id') or row['id'],stop_evt=Mock(is_set=lambda:False)),log=Mock(),db=Mock())
+        self.app.db.list_media.return_value=[self.row]
+        self.app.scanner.feed_items=lambda rows:[{'id':'one','path':'tv/e.mkv'}]
         self.receipts=RexReceipts(self.app)
-    def test_requires_receipt_in_correct_library(self):
+    def test_requires_a_current_source_receipt(self):
         self.assertEqual(self.receipts.state(self.row),'unknown')
         self.receipts.checked=1
         self.assertEqual(self.receipts.state(self.row),'pending')
         self.receipts.locations={'one':'2'}
         self.assertEqual(self.receipts.state(self.row),'other_library')
-        self.receipts.locations={'one':'4'}
+        self.receipts.locations={'one':'tv'}
         self.assertEqual(self.receipts.state(self.row),'received')
         self.assertEqual(self.receipts.state({**self.row,'match_status':'unmatched'}),'withheld')
         self.receipts.error='offline'
         self.assertEqual(self.receipts.state(self.row),'unknown')
+    def test_receipts_use_only_native_api_and_reject_stale_file_labels(self):
+        for file,expected in (('/scud/tv/e.mkv','received'),('/scud/tv/old.mkv','pending')):
+            response=Mock(ok=True);response.json.return_value={'items':[{'id':'one','ratingKey':'10','file':file}]}
+            with patch('scud.receipts.RexClient') as client:
+                client.return_value.base='http://rex'
+                client.return_value.session.get.return_value=response
+                self.receipts.refresh()
+                client.return_value.session.get.assert_called_once()
+                self.assertIn('/rex/feed/',client.return_value.session.get.call_args.args[0])
+            self.assertEqual(self.receipts.state(self.row),expected)
     def test_deleted_receipts_are_not_present(self):
         response=Mock(ok=True);response.json.return_value={'items':[{'id':'one','ratingKey':'10','deleted':True}]}
         with patch('scud.receipts.RexClient') as client:
@@ -62,23 +74,12 @@ class SendProgressTests(unittest.TestCase):
         with self.assertRaises(RexError):client.snapshot([{'id':str(n)} for n in range(201)],lambda sent,total:progress.append((sent,total)))
         self.assertEqual(progress,[(0,201),(200,201)])
 
-class LibraryRelocationTests(unittest.TestCase):
-    def test_relocation_uses_only_scud_ids_and_survives_a_failed_push(self):
-        import json,tempfile
-        from pathlib import Path
-        from scud.db import Database
-        from scud.scanner import Scanner
-        with tempfile.TemporaryDirectory() as directory:
-            db=Database(Path(directory)/'scud.db')
-            with db.connect() as conn:conn.execute("INSERT INTO media(id,library_id,relpath,real_path,size,kind,match_status,tmdb_id,season,episode,updated_at) VALUES('scud-one','tv','Show/e.mkv','/tmp/e.mkv',1,'show','matched','1',1,1,0)")
-            app=SimpleNamespace(db=db,log=Mock(),config={'libraries':[{'id':'tv','rex_library_key':'4'}]});scanner=Scanner(app);app.scanner=scanner
-            present=set();scanner.receipts=Mock(error='',refresh=lambda:None);scanner.receipts.state.side_effect=lambda row:'received' if row and (row.get('rex_feed_id') or row['id']) in present else 'other_library'
-            rex=Mock();rex.post_items.side_effect=RuntimeError('connection lost')
-            with self.assertRaises(RuntimeError):scanner.repair_libraries(rex)
-            self.assertEqual(json.loads(db.state_get('rex_relocation_pending')),['scud-one'])
-            self.assertEqual(rex.delete_ids.call_args.args[0],['scud-one'])
-            self.assertEqual(db.get_media('scud-one')['rex_feed_id'],'scud-one-lib-4')
-            rex.post_items.side_effect=lambda items:present.update(item['id'] for item in items)
-            scanner.repair_libraries(rex)
-            self.assertEqual(json.loads(db.state_get('rex_relocation_pending')),[])
-            self.assertEqual(rex.delete_ids.call_args.args[0],['scud-one-lib-4'])
+class NativeLibraryPlacementTests(unittest.TestCase):
+ def test_native_placement_preserves_existing_feed_identity_and_file_label(self):
+  row={'id':'one','rex_feed_id':'one-lib-4','library_id':'tv','relpath':'Show/e.mkv','kind':'show','size':1,'match_status':'matched','tmdb_id':'1','season':1,'episode':1}
+  app=SimpleNamespace(db=Mock(),log=Mock(),config={'libraries':[{'id':'tv','rex_library_key':'4'}]})
+  scanner=Scanner(app);item=scanner.feed_item(row)
+  self.assertEqual(item['id'],'one-lib-4')
+  self.assertEqual(item['file'],'/scud/tv/library-4/Show/e.mkv')
+  self.assertEqual(item['path'],'tv/Show/e.mkv')
+  self.assertNotIn('library',item)

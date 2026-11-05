@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlsplit,parse_qs,unquote
 import json, logging, mimetypes, os, re, threading
 from .config import public_config, save_config, load_config, slugify
-from .rex import RexClient
+from .rex import RexClient,directory_plan
 from .probe import test_media_tools
 from .matcher import Matcher, guess_file, guess_name
 from .extras import extra_type
@@ -217,6 +217,12 @@ class WebServer:
                 parts=virtual.split('/',1)
                 if len(parts)!=2:return self.send_error(404)
                 lib=next((x for x in app.config.get('libraries',[]) if x['id']==parts[0]),None)
+                if not lib:
+                    nested=parts[1].split('/',1)
+                    routes=directory_plan(app.config)[1]
+                    if len(nested)==2 and routes.get(nested[0])==parts[0]:
+                        lib=next((x for x in app.config.get('libraries',[]) if x['id']==nested[0]),None)
+                        parts=nested
                 if not lib:return self.send_error(404)
                 root=Path(lib['path']).resolve(); target=(root/parts[1]).resolve()
                 try: target.relative_to(root)

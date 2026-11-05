@@ -14,7 +14,8 @@ Before sending media, Scud registers its file server:
 PUT /rex/sources/scud
 Content-Type: application/json
 
-{"url":"http://<scud-host>:8788/files","mount":"/scud"}
+{"url":"http://<scud-host>:8788/files","mount":"/scud",
+ "directories":[{"name":"movies","movies":"Local Movies"},{"name":"tv","shows":"Local TV"}]}
 ```
 
 The source name comes from `rex_source`. When `source_url` is blank, Scud selects its local address from the connection to Rex. Set `source_url` manually if Rex needs a different address to reach Scud.
@@ -43,7 +44,7 @@ The file-version correction is covered by regression tests for in-place and atom
 
 ## Library selection
 
-Each item identifies its destination by the saved Rex section key. The wizard creates or reuses the named libraries through Rex’s library API and saves their section IDs as `rex_library_key`. Each file is sent to its configured section.
+Each configured local root is declared as a native source directory with its movie or TV library name. Rex creates or reuses the library for that directory, then places items by their source paths. Roots with the same name and media type share a declared directory, with Scud routing their file requests to the correct local root. Existing feed IDs and logical file labels remain stable; single-root installs no longer send saved section keys as destination overrides. Existing shared libraries whose local roots all have the same saved section key retain that known destination, avoiding duplicate libraries or version-ID changes. Rex preserves names already assigned to existing libraries; rename those libraries in Rex.
 
 ## File playback
 
@@ -59,9 +60,9 @@ Scud refuses source-side DELETE with HTTP 403 by default. If **Allow deletion fr
 
 ## Compatibility
 
-At startup, Scud waits for `/identity`, then reads the source and library listing schemas and checks TMDB. It does not create media, register test sources, or delete sources on the production Rex.
+At startup, Scud waits for `/identity`, then reads the native source listing schema and checks TMDB. It does not call `/library/sections`, which belongs to Rex’s separate authenticated Plex API. It does not create media, register test sources, or delete sources on the production Rex.
 
-The machine-local Rex updater clones the exact candidate revision into a new directory, builds it with the active local patches, and starts a disposable Rex with an empty test catalogue. It runs the full Scud source/feed contract, including held-item creation/removal, snapshots and source deletion, against that instance. The container has an internal network, a host loopback proxy, dummy claim data, and no production configuration, media or credentials. It is destroyed before production is rebuilt. A failed check or failed cleanup prevents deployment.
+The machine-local Rex updater clones the exact candidate revision into a new directory, builds an unpatched upstream Rex and tests both claimed and unclaimed disposable instances, then builds and tests the locally patched candidate. Every instance uses an empty test catalogue. It runs the full Scud source/feed contract, including held-item creation/removal, snapshots and source deletion, against that instance. The container has an internal network, a host loopback proxy, dummy claim data where applicable, and no production configuration, media or credentials. The proxy never injects authentication headers; Scud must succeed without a token. It is destroyed before production is rebuilt. A failed check or failed cleanup prevents deployment. Native source declarations, held-item operations and snapshots are checked without using the Plex library API.
 
 A successful validation receipt records the exact revision, build fingerprint and Scud checker digest. The post-deployment watcher verifies that receipt and records the baseline; it does not repeat mutating tests on production. These checks cover Scud's API use, not every client or media format.
 
@@ -73,3 +74,14 @@ See [Zurg parity review](zurg-parity.md) for current differences.
 
 - Rex: `docs/feed-api.md`
 - Zurg: `internal/rexfeed/feed.go` and `internal/rexfeed/library.go`
+
+## Reproduce against unpatched upstream
+
+Build the test image from a pristine Rex checkout, with no local patch application:
+
+```bash
+docker build -f /path/to/scud/scripts/Dockerfile.rex-upstream -t scud-rex-upstream /path/to/pristine-rex
+REX_UPSTREAM_IMAGE=scud-rex-upstream REX_UPSTREAM_SOURCE=/path/to/pristine-rex python -m unittest discover -s tests -p test_upstream_rex.py -v
+```
+
+The tests run claimed and unclaimed isolated Rex instances, with no tokens added by the proxy. The Scud integration also registers shared libraries, publishes a cached matched movie, checks native receipts and verifies original file byte ranges both directly and through Rex. It also checks that an existing multi-root library retains its section and feed IDs. Authenticated Plex requests appear only in the test's final placement assertions and are never made by Scud. Containers, networks and temporary state are removed after each case.

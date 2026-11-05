@@ -1,9 +1,46 @@
 # Zurg reference: /internal/rexfeed/feed.go (source registration, batches and snapshot sessions).
 from __future__ import annotations
-import json, socket, time, urllib.parse, requests
+import hashlib, json, socket, time, urllib.parse, requests
 
 class RexError(RuntimeError): pass
 class SnapshotSessionLost(RexError): pass
+
+def legacy_shared_key(config,library_id):
+    libraries=config.get('libraries',[])
+    selected=next((library for library in libraries if library['id']==library_id),None)
+    if not selected:return None
+    def target(library):
+        kind=library.get('type','movie')
+        return kind,library.get('rex_library_name') or library.get('name') or ('Local TV' if kind=='show' else 'Local Movies')
+    members=[library for library in libraries if target(library)==target(selected)]
+    keys={str(library.get('rex_library_key') or '') for library in members}
+    return next(iter(keys)) if len(members)>1 and len(keys)==1 and '' not in keys else None
+
+def directory_plan(config):
+    """Map local roots to native directories; roots with the same title share one."""
+    groups={};routes={};directories=[]
+    libraries=config.get('libraries',[]);ids={library['id'] for library in libraries}
+    for library in libraries:
+        kind='shows' if library.get('type')=='show' else 'movies'
+        title=library.get('rex_library_name') or library.get('name') or ('Local TV' if kind=='shows' else 'Local Movies')
+        groups.setdefault((kind,title),[]).append(library['id'])
+    for (kind,title),members in groups.items():
+        if legacy_shared_key(config,members[0]):
+            # Older Scud deliberately put these roots in one existing section.
+            # Keep that known destination without creating duplicate libraries.
+            routes.update((member,member) for member in members)
+            continue
+        directory=members[0]
+        if len(members)>1:
+            directory='__scud_shared_'+hashlib.sha256((kind+'\0'+title).encode()).hexdigest()[:16]
+            while directory in ids:directory+='_'  # never shadow a real local root
+        directories.append({'name':directory,kind:title})
+        routes.update((member,directory) for member in members)
+    return directories,routes
+
+def source_path(config,library_id,relpath):
+    directory=directory_plan(config)[1].get(library_id,library_id)
+    return directory+'/'+(library_id+'/' if directory!=library_id else '')+relpath
 
 class RexClient:
     def __init__(self,config,log): self.config=config; self.log=log; self.session=requests.Session()
@@ -38,31 +75,12 @@ class RexClient:
         return f"http://{local}:{int(self.config.get('port',8788))}/files"
     def register_source(self):
         name=self.config.get('rex_source','scud'); body={'url':self.source_url(),'mount':'/scud'}
+        body['directories']=directory_plan(self.config)[0]
         r=self.session.put(f"{self.base}/rex/sources/{urllib.parse.quote(str(name),safe='')}",json=body,headers=self.headers(),timeout=30)
         if not r.ok: raise RexError(f"source registration answered {r.status_code}: {r.text[:300]}")
-        return r.json() if r.content else {}
-    def ensure_libraries(self):
-        if not self.base:return False
-        def sections():
-            response=self.session.get(self.base+'/library/sections',headers=self.headers(),timeout=15)
-            if not response.ok:raise RexError(f'Cannot list Rex libraries (HTTP {response.status_code}). Check access to Rex’s library API.')
-            return response.json().get('MediaContainer',{}).get('Directory',[]) or []
-        existing=sections();changed=False
-        for library in self.config.get('libraries',[]):
-            kind='show' if library.get('type')=='show' else 'movie'
-            name=library.get('rex_library_name') or library.get('name') or ('Local TV' if kind=='show' else 'Local Movies')
-            hit=next((row for row in existing if row.get('title')==name and row.get('type')==kind),None)
-            if hit is None:
-                params={'name':name,'type':kind,'agent':'tv.plex.agents.series' if kind=='show' else 'tv.plex.agents.movie','scanner':'Plex TV Series' if kind=='show' else 'Plex Movie','language':'en-US','location':'/scud/'+library['id']}
-                response=self.session.post(self.base+'/library/sections',params=params,headers=self.headers(),timeout=30)
-                if response.status_code!=201:raise RexError(f'Cannot create Rex library {name!r} (HTTP {response.status_code}).')
-                existing=sections()
-                hit=next((row for row in existing if row.get('title')==name and row.get('type')==kind),None)
-                if hit is None:raise RexError(f'Rex created {name!r} but did not return its library ID.')
-            key=str(hit.get('key') or '')
-            if not key:raise RexError(f'Rex library {name!r} has no library ID.')
-            if library.get('rex_library_key')!=key:library['rex_library_key']=key;changed=True
-        return changed
+        result=r.json() if r.content else {}
+        if isinstance(result,dict) and result.get('ignored'):raise RexError('Rex ignored a library declaration. Check the library names and folder IDs.')
+        return result
     def post_items(self,items):
         items=[item for item in items if item]
         if not items:return {}

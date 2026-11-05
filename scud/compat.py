@@ -51,30 +51,28 @@ class Compatibility:
             if not condition:raise RexError(message)
         sources=request('GET','/rex/sources')
         require(isinstance(sources,dict) and isinstance(sources.get('size'),int) and isinstance(sources.get('sources',[]),list),'Rex source listing schema changed.')
-        sections=request('GET','/library/sections').get('MediaContainer',{})
-        require(isinstance(sections,dict) and isinstance(sections.get('Directory',[]),list),'Rex library listing schema changed.')
         # Normal startup only reads production. Mutating contracts run in a disposable Rex.
         if not self.isolated:return
         from urllib.parse import urlsplit
         require(urlsplit(rex.base).hostname in ('127.0.0.1','::1'),'Isolated checks require a loopback Rex URL.')
-        require(any(row.get('type') in ('show','movie') for row in sections.get('Directory',[])),'Isolated Rex needs a test movie or TV library.')
         source='scud-compat-'+uuid.uuid4().hex[:12];source_path='/rex/sources/'+source;feed='/rex/feed/'+source;registered=False
         try:
-            request('PUT',source_path,{'url':rex.source_url(),'mount':'/scud-compat'});registered=True
+            result=request('PUT',source_path,{'url':rex.source_url(),'mount':'/scud-compat','directories':[{'name':'__compat__','movies':'Scud Compatibility'}]});registered=True
+            require(not result.get('ignored'),'Rex rejected a native library declaration.')
+            registration=request('GET',source_path)
+            require(any(row.get('name')=='__compat__' and row.get('movies')=='Scud Compatibility' for row in registration.get('directories',[])),'Rex source library declarations changed.')
             for leaf in ('items','held'):
                 listing=request('GET',feed+'/'+leaf)
                 require(isinstance(listing,dict) and isinstance(listing.get('size'),int) and isinstance(listing.get('held' if leaf=='held' else 'items',[]),list),f'Rex {leaf} listing schema changed.')
             result=request('POST',feed+'/items',{'items':[]})
             require(isinstance(result,dict) and all(isinstance(result.get(key),int) for key in ('created','updated','held','unchanged')),'Rex item acknowledgement schema changed.')
-            library=next((row for row in sections.get('Directory',[]) if row.get('type') in ('show','movie')),None)
-            if library:
-                item={'id':'contract-held','path':'__compat__/contract-video.mkv','library':str(library['key']),'kind':'episode' if library['type']=='show' else 'movie','ids':{'tmdb':2430 if library['type']=='show' else 603},'season':9,'episode':1,'size':1,'media_info':None}
-                result=request('POST',feed+'/items',{'items':[item]})
-                require(result.get('held')==1,'Rex no longer accepts an unprobed media item as held.')
-                listing=request('GET',feed+'/held')
-                require(any(row.get('id')=='contract-held' for row in listing.get('held',[])),'Rex held-item listing schema changed.')
-                result=request('DELETE',feed+'/items',{'ids':['contract-held']})
-                require(result.get('released')==1,'Rex held-item removal schema changed.')
+            item={'id':'contract-held','path':'__compat__/contract-video.mkv','kind':'movie','ids':{'tmdb':603},'size':1,'media_info':None}
+            result=request('POST',feed+'/items',{'items':[item]})
+            require(result.get('held')==1,'Rex no longer accepts an unprobed media item as held.')
+            listing=request('GET',feed+'/held')
+            require(any(row.get('id')=='contract-held' for row in listing.get('held',[])),'Rex held-item listing schema changed.')
+            result=request('DELETE',feed+'/items',{'ids':['contract-held']})
+            require(result.get('released')==1,'Rex held-item removal schema changed.')
             result=request('DELETE',feed+'/items',{'ids':[]})
             require(isinstance(result,dict) and all(isinstance(result.get(key),int) for key in ('trashed','deleted','released','unknown')),'Rex delete acknowledgement schema changed.')
             result=request('PUT',feed+'/snapshot',{'session':uuid.uuid4().hex,'part':0,'complete':True,'items':[]})

@@ -24,7 +24,7 @@ Settings has separate tabs for TMDB, Rex, scanning and serving, and libraries. S
 
 The media page shows scan start and finish times, elapsed time, and average files processed per second. After counting the files, Scud estimates the finish time from the speed so far; estimates can change when matching or probing takes longer.
 
-A folder shows **Complete in Rex** when its files have been verified in the configured Rex library. Scud checks file names, sizes and modification times to identify changed folders; unchanged folders skip matching and probing. A file edited in place is detected even when its parent folder’s date stays the same.
+A folder shows **Complete in Rex** when Rex’s native feed lists its current file IDs and file labels as accepted. This does not independently inspect their Plex library placement. Scud checks file names, sizes and modification times to identify changed folders; unchanged folders skip matching and probing. A file edited in place is detected even when its parent folder’s date stays the same.
 
 Settings → Compatibility shows the last tested Rex commit and the results of the startup Rex and TMDB API checks. A failed check is logged and displayed in a warning banner. Scud keeps running so existing media remains accessible.
 
@@ -47,7 +47,7 @@ libraries:
 - `name`: the library name shown in Scud.
 - `path`: the folder's path on the Scud server. The service must be able to read it.
 
-Scud creates or reuses a Rex library with the configured name and media type. Its section ID is saved as `rex_library_key` and used when sending files. `rex_library_name`, when present, supplies the name in Rex.
+Scud declares named movie and TV libraries through `PUT /rex/sources/{source}` with `directories`, like the official Rex addons. It does not call the gated Plex library API or require a token. `rex_library_name`, when present, supplies the requested name. Rex keeps existing source libraries and any names assigned in Rex. Old `rex_library_key` values are retained for stable file/version identity. Existing multi-root shared libraries with one consistent saved key retain that destination; new libraries use native directory declarations.
 
 ## TMDB
 

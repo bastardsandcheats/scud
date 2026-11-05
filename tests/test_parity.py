@@ -18,7 +18,7 @@ class BonusTests(unittest.TestCase):
   self.assertIsNone(extra_type({**self.extra,'season':0,'episode':1}));self.assertTrue(self.scanner.publishable(self.extra));self.assertFalse(self.scanner.publishable({**self.extra,'match_status':'unmatched'}))
  def test_extra_uses_its_parent_directory_but_original_source_path(self):
   main=self.scanner.feed_item(self.main);item=self.scanner.feed_item(self.extra)
-  self.assertEqual(main['library'],'4');self.assertEqual(item['library'],'4');self.assertEqual(item['kind'],'extra');self.assertEqual(item['extra_type'],'behindthescenes');self.assertEqual(item['path'],'tv/'+self.extra['relpath']);self.assertEqual(str(Path(item['file']).parent),str(Path('/scud/'+main['path']).parent));self.assertNotIn('episode',item)
+  self.assertNotIn('library',main);self.assertNotIn('library',item);self.assertEqual(item['kind'],'extra');self.assertEqual(item['extra_type'],'behindthescenes');self.assertEqual(item['path'],'tv/'+self.extra['relpath']);self.assertEqual(str(Path(item['file']).parent),str(Path('/scud/'+main['path']).parent));self.assertNotIn('episode',item)
  def test_orphan_bonus_is_not_published_and_features_precede_clips(self):
   self.assertIsNone(self.scanner.feed_item(self.extra,{}));items=self.scanner.all_feed_items();self.assertEqual([item['kind'] for item in items],['episode','extra'])
  def test_movie_title_at_root_is_not_misclassified_as_extra(self):

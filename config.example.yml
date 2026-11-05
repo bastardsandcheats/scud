@@ -16,9 +16,7 @@ libraries:
     type: movie
     name: Local Movies
     path: /media/movies
-    rex_library_key: ""
   - id: tv
     type: show
     name: Local TV
     path: /media/tv
-    rex_library_key: ""

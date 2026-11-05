@@ -1,4 +1,4 @@
-"""Verify native source items against the library Rex actually stores them in."""
+"""Verify accepted source items through the native Rex feed API."""
 from __future__ import annotations
 import time
 from .rex import RexClient, RexError
@@ -19,30 +19,14 @@ class RexReceipts:
             response=rex.session.get(f"{rex.base}/rex/feed/{self.app.config.get('rex_source','scud')}/items",headers=rex.headers(),timeout=60)
             if not response.ok:raise RexError(f'Cannot check received media (HTTP {response.status_code}).')
             items=[item for item in response.json().get('items',[]) if not item.get('deleted') and item.get('ratingKey')]
-            keys=list({str(item['ratingKey']) for item in items})
-            sections={};files={}
-            for offset in range(0,len(keys),100):
-                if self.app.scanner.stop_evt.is_set():return
-                response=rex.session.get(rex.base+'/library/metadata/'+','.join(keys[offset:offset+100]),headers=rex.headers(),timeout=60)
-                if not response.ok:raise RexError(f'Cannot verify Rex libraries (HTTP {response.status_code}).')
-                for row in response.json().get('MediaContainer',{}).get('Metadata',[]):
-                    if not row.get('deletedAt'):
-                        key=str(row['ratingKey']);sections[key]=str(row.get('librarySectionID') or '')
-                        files[key]={part.get('file') for media in row.get('Media',[]) for part in media.get('Part',[])}
-            # Clips intentionally expose no librarySectionID. Their section's
-            # extras listing proves ownership without accessing Rex's database.
-            if any(not value for value in sections.values()):
-                for library in self.app.config.get('libraries',[]):
-                    key=str(library.get('rex_library_key') or '')
-                    if not key:continue
-                    response=rex.session.get(rex.base+'/library/sections/'+key+'/extras/all',headers=rex.headers(),timeout=60)
-                    if not response.ok:raise RexError(f'Cannot verify Rex extras (HTTP {response.status_code}).')
-                    for clip in response.json().get('MediaContainer',{}).get('Metadata',[]):
-                        rating=str(clip.get('ratingKey') or '')
-                        if rating in sections:sections[rating]=key
-            response=rex.session.get(rex.base+'/library/sections',headers=rex.headers(),timeout=30)
-            if response.ok:self.library_names={str(section['key']):section.get('title','another Rex library') for section in response.json().get('MediaContainer',{}).get('Directory',[])}
-            self.locations={item['id']:sections[str(item['ratingKey'])] for item in items if str(item['ratingKey']) in sections and item.get('file') in files.get(str(item['ratingKey']),set())}
+            # The native listing proves acceptance without entering the gated PMS API.
+            # Preserve the expected file label check so an older version is not current.
+            rows=self.app.db.list_media(limit=200000)
+            expected={item['id']:item for item in self.app.scanner.feed_items(rows)}
+            libraries={self.app.scanner.feed_id(row):row['library_id'] for row in rows}
+            self.locations={item['id']:libraries[item['id']] for item in items
+                            if item['id'] in expected and item.get('file')==(expected[item['id']].get('file') or '/scud/'+expected[item['id']]['path'])}
+            self.library_names={library['id']:library.get('rex_library_name') or library.get('name','Rex library') for library in self.app.config.get('libraries',[])}
             self.checked=time.time();self.error=''
         except Exception as error:
             self.error=str(error)
@@ -53,7 +37,7 @@ class RexReceipts:
         if not self.app.scanner.publishable(row):return 'withheld'
         if self.checked is None or self.error:return 'unknown'
         actual=self.locations.get(self.app.scanner.feed_id(row))
-        target=next((str(lib.get('rex_library_key') or '') for lib in self.app.config.get('libraries',[]) if lib['id']==row['library_id']),'')
+        target=row['library_id']
         if actual is None:return 'pending'
         return 'received' if target and actual==target else 'other_library'
 

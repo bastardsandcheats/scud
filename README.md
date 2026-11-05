@@ -28,7 +28,7 @@ Rex handles playback and metadata. Scud serves the original files without transc
 - Python 3.10 or later.
 - FFmpeg and FFprobe. The installer installs FFmpeg on systems with `apt` if FFprobe is missing.
 - A Rex server reachable from Scud over a local or private network, such as Tailscale.
-- Access to Rex’s library API to create or reuse your media libraries.
+- A Rex build supporting native source directory/library declarations; no Rex token is required.
 - A TMDB API key and internet access for automatic matching and suggestions.
 
 ## Install
@@ -59,7 +59,7 @@ The interface has no user authentication. Run Scud on a trusted network, or prot
 The first visit opens the setup wizard:
 
 1. Enter your Rex server's URL, including its port, and click **Test Rex**. Enter your TMDB API key and click **Test TMDB**. The source name identifies this Scud installation in Rex; `scud` works for a single installation.
-2. Add your folders. For each one, choose **Media type**, enter its **Folder path**, and give it a **Library name**. Paths refer to the Scud server. Scud creates or reuses a Rex library with that name and media type.
+2. Add your folders. For each one, choose **Media type**, enter its **Folder path**, and give it a **Library name**. Paths refer to the Scud server. Scud declares the libraries through Rex’s native source API. No Plex or Rex token is needed.
 3. Set how often Scud checks the folders and sends a full sync. If you use a custom FFmpeg installation, enter its path and click **Test FFmpeg**.
 4. Review the settings and click **Save & start Scud**.
 
@@ -162,5 +162,5 @@ pytest -q
 Scud is provided under the MIT License. Rex and Zurg are separate projects with their own licenses.
 
 <!-- rex-compat-start -->
-Last live API compatibility test: Rex commit `9f7d8bdc5d744b5d501480db7d80df10f6d9cf94` (2026-11-04T06:02:51Z).
+Last live API compatibility test: unpatched Rex commit `8203d9ca34511c865b5f892005faa82759ec4b9a` (2026-11-05T03:36:58Z), claimed and unclaimed, without credentials.
 <!-- rex-compat-end -->

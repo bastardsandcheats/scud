@@ -4,8 +4,7 @@ import hashlib, json, os, re, threading, time, uuid
 from pathlib import Path
 from .matcher import guess_file, Matcher
 from .probe import ffprobe
-from .rex import RexClient
-from .config import save_config
+from .rex import RexClient,source_path,legacy_shared_key
 from .receipts import RexReceipts
 from .inventory import FolderInventory
 from .extras import extra_type,identity,group_key
@@ -179,12 +178,13 @@ class Scanner:
     def feed_item(self,row,parents=None):
         if not self.publishable(row):return None
         lib=next((x for x in self.app.config.get('libraries',[]) if x['id']==row['library_id']),None) or {}
-        item={'id':self.feed_id(row),'path':f"{row['library_id']}/{row['relpath']}",'name':row['relpath'],
+        item={'id':self.feed_id(row),'path':source_path(self.app.config,row['library_id'],row['relpath']),'name':row['relpath'],
               'release':f"{row['library_id']}/{Path(row['relpath']).parts[0] if len(Path(row['relpath']).parts)>1 else Path(row['relpath']).stem}",
               'folder':str(Path(row['relpath']).parent.as_posix()) if str(Path(row['relpath']).parent)!='.' else '',
               'size':row['size'],'media_info':row.get('media_info')}
-        if lib.get('rex_library_key'): item['library']=str(lib['rex_library_key'])
-        else: item['library']='show' if row['kind']=='show' else 'movie'
+        legacy=legacy_shared_key(self.app.config,row['library_id'])
+        if legacy:item['library']=legacy
+        if item['path']!=f"{row['library_id']}/{row['relpath']}":item['file']=f"/scud/{row['library_id']}/{row['relpath']}"
         if row.get('rex_feed_id'):
             # A new ID also needs its own logical file label, even while the old
             # version is in Rex's trash. The served path still points at the real file.
@@ -217,43 +217,6 @@ class Scanner:
     def withdraw_unmatched(self,rex):
         ids=[self.feed_id(row) for row in self.db.list_media(limit=200000) if not self.publishable(row)]
         for offset in range(0,len(ids),1000):rex.delete_ids(ids[offset:offset+1000])
-    def repair_libraries(self,rex):
-        saved=self.db.state_get('rex_relocation_pending','[]')
-        pending=json.loads(saved or '[]') if isinstance(saved,str) else []
-        if not isinstance(pending,list):pending=[]
-        misplaced=[row['id'] for row in self.db.list_media(limit=200000) if self.receipts.state(row) in ('other_library','pending') and not extra_type(row)]
-        if not pending and not misplaced:return
-        self.receipts.refresh()
-        if self.receipts.error:raise RuntimeError('Cannot verify Rex libraries before moving files: '+self.receipts.error)
-        candidates=set(pending)
-        candidates.update(row['id'] for row in self.db.list_media(limit=200000) if self.receipts.state(row) in ('other_library','pending') and not extra_type(row))
-        rows=[self.db.get_media(ident) for ident in sorted(candidates)]
-        rows=[row for row in rows if self.publishable(row) and self.receipts.state(row)!='received']
-        self.send_progress.update(phase='relocating',sent=0,total=len(rows))
-        remaining=[row['id'] for row in rows]
-        self.db.state_set('rex_relocation_pending',json.dumps(remaining))
-        for offset in range(0,len(rows),50):
-            batch=rows[offset:offset+50]
-            # A manually matched Rex parent protects even a trashed old version.
-            # Give this source version a fresh feed ID for its new library, leaving
-            # the old parent's identity and other sources' versions untouched.
-            rex.delete_ids([row.get('rex_feed_id') or row['id'] for row in batch])
-            for row in batch:
-                library=next(lib for lib in self.app.config['libraries'] if lib['id']==row['library_id'])
-                row['rex_feed_id']=(row.get('rex_feed_id') or row['id'])+'-lib-'+str(library['rex_library_key'])
-            with self.db.connect() as connection:
-                connection.executemany('UPDATE media SET rex_feed_id=? WHERE id=?',[(row['rex_feed_id'],row['id']) for row in batch])
-            rex.post_items([self.feed_item(row) for row in batch])
-            remaining=remaining[len(batch):]
-            self.db.state_set('rex_relocation_pending',json.dumps(remaining))
-            self.send_progress.update(phase='relocating',sent=offset+len(batch),total=len(rows))
-            self.log.info('Moved %s/%s Scud files into their intended Rex libraries',offset+len(batch),len(rows))
-        self.receipts.refresh()
-        if self.receipts.error:raise RuntimeError('Moved files, but Rex receipt verification failed: '+self.receipts.error)
-        unresolved=[row['id'] for row in rows if self.receipts.state(self.db.get_media(row['id']))!='received']
-        self.db.state_set('rex_relocation_pending',json.dumps(unresolved))
-        self.snapshot_due=True
-        if unresolved:raise RuntimeError(f'{len(unresolved)} files still need library relocation; Scud will retry.')
     def sync(self,changed,gone):
         if self.publisher.running:
             full=bool(gone) or any(extra_type(self.db.get_media(ident)) for ident in changed)
@@ -266,13 +229,9 @@ class Scanner:
         items=self.feed_items([self.db.get_media(ident) for ident in changed])
         self.send_progress={'phase':'preparing','sent':0,'total':len(items),'started':time.time()}
         try:
-            if rex.ensure_libraries():
-                save_config(self.app.config_path,self.app.config)
-                self.snapshot_due=True
             rex.register_source()
             self.withdraw_unmatched(rex)
             if self.receipts.checked is None:self.receipts.refresh()
-            self.repair_libraries(rex)
             self.send_update(0,len(items))
             items=self.feed_items([self.db.get_media(ident) for ident in changed])
             for i in range(0,len(items),200):
@@ -296,7 +255,6 @@ class Scanner:
             self.send_progress={'phase':'preparing','sent':0,'total':0,'started':time.time()}
             try:
                 rex=RexClient(self.app.config,self.log);rex.register_source();self.withdraw_unmatched(rex)
-                self.repair_libraries(rex)
                 rex.snapshot(self.all_feed_items(),progress=self.send_update)
                 self.db.state_set('last_snapshot',int(time.time()))
                 self.send_progress.update(phase='complete',finished=time.time())

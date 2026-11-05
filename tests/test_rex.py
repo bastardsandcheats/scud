@@ -60,13 +60,23 @@ if __name__ == '__main__':
     unittest.main()
 
 class RexLibraryCreationTests(unittest.TestCase):
- def test_create_reuse_and_save_ids_without_credentials(self):
-  config={'rex_url':'http://rex:32401','libraries':[{'id':'movies','type':'movie','rex_library_name':'Local Movies'}]}
+ def test_legacy_shared_destination_is_not_redeclared(self):
+  from scud.rex import directory_plan,legacy_shared_key
+  config={'libraries':[{'id':'one','type':'movie','name':'Movies','rex_library_key':'4'},{'id':'two','type':'movie','name':'Movies','rex_library_key':'4'}]}
+  self.assertEqual(directory_plan(config),([],{'one':'one','two':'two'}))
+  self.assertEqual(legacy_shared_key(config,'two'),'4')
+ def test_declares_libraries_through_source_api_without_credentials(self):
+  config={'rex_url':'http://rex:32401','source_url':'http://scud:8788','libraries':[{'id':'movies','type':'movie','rex_library_name':'Local Movies','rex_library_key':'3'},{'id':'tv','type':'show','name':'Local TV'}]}
   client=RexClient(config,Mock());client.session=Mock()
-  initial=Mock(ok=True);initial.json.return_value={'MediaContainer':{'Directory':[]}}
-  created=Mock(ok=True);created.json.return_value={'MediaContainer':{'Directory':[{'key':'3','title':'Local Movies','type':'movie'}]}}
-  client.session.get.side_effect=[initial,created,created]
-  client.session.post.return_value=Mock(status_code=201)
-  self.assertTrue(client.ensure_libraries());self.assertEqual(config['libraries'][0]['rex_library_key'],'3')
-  self.assertFalse(client.ensure_libraries());client.session.post.assert_called_once()
-  self.assertEqual(client.session.post.call_args.kwargs['headers'],{'Accept':'application/json'})
+  client.session.put.return_value=Mock(content=b'{}',ok=True);client.session.put.return_value.json.return_value={}
+  client.register_source()
+  call=client.session.put.call_args
+  self.assertEqual(call.kwargs['json']['directories'],[{'name':'movies','movies':'Local Movies'},{'name':'tv','shows':'Local TV'}])
+  self.assertEqual(call.kwargs['headers'],{'Accept':'application/json'})
+  self.assertEqual(config['libraries'][0]['rex_library_key'],'3')
+  client.session.get.assert_not_called();client.session.post.assert_not_called()
+ def test_rejected_library_declaration_is_not_reported_as_success(self):
+  from scud.rex import RexError
+  client=RexClient({'rex_url':'http://rex','source_url':'http://scud'},Mock());client.session=Mock()
+  client.session.put.return_value=Mock(content=b'{}',ok=True);client.session.put.return_value.json.return_value={'ignored':[{'reason':'invalid directory'}]}
+  with self.assertRaisesRegex(RexError,'ignored a library declaration'):client.register_source()

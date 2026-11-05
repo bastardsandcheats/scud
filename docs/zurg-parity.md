@@ -6,7 +6,7 @@ The tested Rex commit and test timestamp are recorded in `scud/rex_compatibility
 
 Scud follows Rex’s `docs/feed-api.md` and the behavior of Zurg’s `internal/rexfeed/feed.go` and `internal/rexfeed/library.go`:
 
-- Source registration and explicit destination library keys.
+- Source registration with native directory/library declarations, without Plex credentials.
 - Matched movie/show IDs, TV season/episode numbers and multi-episode end numbers.
 - Full FFprobe streams, formats and chapters.
 - Bonus videos as `kind: extra` clips with an `extra_type`, attached to a matched title.
