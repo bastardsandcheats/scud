@@ -77,10 +77,9 @@ See [Zurg parity review](zurg-parity.md) for current differences.
 
 ## Reproduce against unpatched upstream
 
-Build the test image from a pristine Rex checkout, with no local patch application:
+The integration tests accept a maintainer-built, unpatched Rex image; Scud does not ship a Docker installation. With an upstream test image and its matching pristine source checkout available:
 
 ```bash
-docker build -f /path/to/scud/scripts/Dockerfile.rex-upstream -t scud-rex-upstream /path/to/pristine-rex
 REX_UPSTREAM_IMAGE=scud-rex-upstream REX_UPSTREAM_SOURCE=/path/to/pristine-rex python -m unittest discover -s tests -p test_upstream_rex.py -v
 ```
 
