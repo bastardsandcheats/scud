@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 — 2026-11-05
 
 Fix HTTP 401 on stock Rex by declaring libraries and checking receipts exclusively through the native source/feed API, without tokens. Preserve feed identities and shared destinations across multiple local folders. Add unpatched claimed/unclaimed Rex integration tests and remove credential injection from isolated validation.
 
